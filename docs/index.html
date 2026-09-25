@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aplikasi Pencatat Barang — API Docs (Swagger)</title>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.17.14/swagger-ui.css" />
+  <style>
+    body { margin: 0; font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    .topbar-custom {
+      background: #0f172a; color: #fff; padding: 18px 28px;
+      display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+    }
+    .topbar-custom h1 { margin: 0; font-size: 20px; }
+    .topbar-custom p { margin: 4px 0 0; font-size: 13px; color: #cbd5e1; }
+    .topbar-custom a {
+      color: #0f172a; background: #38bdf8; padding: 8px 14px; border-radius: 8px;
+      text-decoration: none; font-weight: 600; font-size: 13px;
+    }
+    #swagger-ui { max-width: 1200px; margin: 0 auto; }
+  </style>
+</head>
+<body>
+  <div class="topbar-custom">
+    <div>
+      <h1>📦 Aplikasi Pencatat Barang — API Documentation</h1>
+      <p>Swagger UI &bull; OpenAPI 3.0 &bull; Auth (JWT) + Dashboard + Barang Masuk/Keluar + Laporan + Export PDF/Excel/CSV + Profile</p>
+    </div>
+    <div>
+      <a href="./openapi.yaml" download>⬇ Download openapi.yaml</a>
+    </div>
+  </div>
+
+  <div id="swagger-ui"></div>
+
+  <script src="https://unpkg.com/swagger-ui-dist@5.17.14/swagger-ui-bundle.js"></script>
+  <script src="https://unpkg.com/swagger-ui-dist@5.17.14/swagger-ui-standalone-preset.js"></script>
+  <script>
+    window.onload = function () {
+      SwaggerUIBundle({
+        url: "./openapi.yaml",
+        dom_id: "#swagger-ui",
+        deepLinking: true,
+        presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
+        layout: "StandaloneLayout",
+        persistAuthorization: true,
+        tryItOutEnabled: true
+      });
+    };
+  </script>
+</body>
+</html>

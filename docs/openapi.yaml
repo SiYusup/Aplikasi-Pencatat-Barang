@@ -1,0 +1,2198 @@
+openapi: 3.0.3
+info:
+  title: Aplikasi Pencatat Barang API
+  description: |
+    Dokumentasi REST API untuk **Aplikasi Pencatat Barang**.
+
+    ## Daftar Fitur
+    **A. Auth:** Registrasi, Login, Refresh Token, Logout, Lupa & Reset Password
+
+    **B. Admin Panel:**
+    1. Dashboard barang (ringkasan + grafik + stok menipis)
+    2. Master Barang (CRUD + foto + pencarian)
+    3. Input Barang Masuk
+    4. Input Barang Keluar
+    5. Laporan (stok, masuk, keluar, mutasi/kartu stok)
+    6. Export PDF, Excel (XLSX), dan CSV
+    7. Profile & Update Profile (+ ganti password + avatar)
+    8. Logout
+
+    **C. Fitur Rekomendasi (sudah termasuk di dokumen ini):**
+    - `Kategori` — pengelompokan barang
+    - `Supplier` — asal barang masuk
+    - `Stok Opname / Penyesuaian Stok` — koreksi selisih fisik vs sistem
+    - `Manajemen Pengguna & Role` (`admin`, `staff`) — khusus admin
+    - `Audit Log` — jejak siapa input/ubah/hapus apa
+    - `Notifikasi Stok Menipis` — daftar + tandai dibaca
+    - `Upload Foto Barang` — multipart
+
+    ## Cara Pakai
+    1. `POST /auth/register` atau `POST /auth/login` untuk dapat `access_token`.
+    2. Klik tombol **Authorize** (kanan atas), isi `Bearer <access_token>`.
+    3. Semua endpoint bertanda 🔒 membutuhkan header `Authorization: Bearer <token>`.
+  version: 1.0.0
+  contact:
+    name: UCrazy
+    email: finder.ucup@gmail.com
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:8000/api/v1
+    description: Local (PHP built-in / Laragon / XAMPP)
+  - url: https://api.pencatat-barang.test/api/v1
+    description: Staging
+
+tags:
+  - name: Auth
+    description: Registrasi, login, token, logout, lupa password
+  - name: Dashboard
+    description: Ringkasan statistik & grafik admin panel
+  - name: Barang
+    description: Master data barang (CRUD + stok opname + foto + riwayat)
+  - name: Kategori
+    description: Rekomendasi — master kategori barang
+  - name: Supplier
+    description: Rekomendasi — master supplier/vendor
+  - name: Barang Masuk
+    description: Pencatatan barang masuk (menambah stok)
+  - name: Barang Keluar
+    description: Pencatatan barang keluar (mengurangi stok)
+  - name: Laporan
+    description: Laporan stok, masuk, keluar, mutasi
+  - name: Export
+    description: Export PDF / Excel / CSV
+  - name: Profile
+    description: Profil user login, update profil, ganti password
+  - name: Users
+    description: Rekomendasi — manajemen pengguna (admin only)
+  - name: Audit Log
+    description: Rekomendasi — jejak aktivitas
+  - name: Notifikasi
+    description: Rekomendasi — peringatan stok menipis
+
+security:
+  - bearerAuth: []
+
+paths:
+  # ================= AUTH =================
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Registrasi akun baru
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+            examples:
+              staff:
+                value:
+                  name: Budi Staff
+                  email: budi@example.com
+                  password: rahasia123
+                  password_confirmation: rahasia123
+      responses:
+        '201':
+          description: Registrasi berhasil
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Login & dapatkan JWT token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            example:
+              email: admin@example.com
+              password: admin123
+      responses:
+        '200':
+          description: Login berhasil
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh access token (rekomendasi)
+      description: Tukar refresh_token menjadi access_token baru.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token:
+                  type: string
+                  example: eyJhbGciOiJIUzI1NiJ9.refresh.payload
+      responses:
+        '200':
+          description: Token baru
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Logout (Admin Panel #8)
+      description: Invalidate token saat ini. Client juga harus menghapus token tersimpan.
+      responses:
+        '200':
+          description: Logout berhasil
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+              example:
+                value:
+                  success: true
+                  message: Logout berhasil
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/forgot-password:
+    post:
+      tags: [Auth]
+      summary: Minta link reset password (rekomendasi)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: budi@example.com
+      responses:
+        '200':
+          description: Link reset dikirim ke email
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+
+  /auth/reset-password:
+    post:
+      tags: [Auth]
+      summary: Reset password dengan token email (rekomendasi)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, email, password, password_confirmation]
+              properties:
+                token:
+                  type: string
+                  example: abc123resetToken
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  minLength: 8
+                password_confirmation:
+                  type: string
+      responses:
+        '200':
+          description: Password berhasil direset
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+
+  # ================= DASHBOARD =================
+  /dashboard/summary:
+    get:
+      tags: [Dashboard]
+      summary: Dashboard barang — ringkasan statistik (Admin Panel #1)
+      parameters:
+        - $ref: '#/components/parameters/PeriodeQuery'
+      responses:
+        '200':
+          description: Ringkasan dashboard
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/DashboardSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /dashboard/chart:
+    get:
+      tags: [Dashboard]
+      summary: Data grafik arus masuk vs keluar
+      parameters:
+        - name: range
+          in: query
+          schema:
+            type: string
+            enum: [7d, 30d, 12m]
+            default: 30d
+      responses:
+        '200':
+          description: Data grafik
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        tanggal:
+                          type: string
+                          example: '2026-09-18'
+                        masuk:
+                          type: integer
+                          example: 25
+                        keluar:
+                          type: integer
+                          example: 10
+
+  /dashboard/low-stock:
+    get:
+      tags: [Dashboard]
+      summary: Daftar barang stok menipis (stok <= stok_minimum)
+      parameters:
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/PerPageQuery'
+      responses:
+        '200':
+          description: List barang kritis
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BarangPaginated'
+
+  # ================= BARANG =================
+  /barang:
+    get:
+      tags: [Barang]
+      summary: List barang (dengan search, filter, pagination)
+      parameters:
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/PerPageQuery'
+        - $ref: '#/components/parameters/SearchQuery'
+        - name: kategori_id
+          in: query
+          schema:
+            type: integer
+        - name: sort_by
+          in: query
+          schema:
+            type: string
+            enum: [nama, stok, harga, created_at]
+            default: created_at
+        - name: sort_dir
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+        - name: stok_kritis
+          in: query
+          description: '1 = hanya tampilkan stok menipis'
+          schema:
+            type: integer
+            enum: [0, 1]
+      responses:
+        '200':
+          description: Daftar barang
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BarangPaginated'
+    post:
+      tags: [Barang]
+      summary: Tambah barang baru
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BarangInput'
+      responses:
+        '201':
+          description: Barang dibuat
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Barang berhasil ditambahkan
+                  data:
+                    $ref: '#/components/schemas/Barang'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /barang/{id}:
+    get:
+      tags: [Barang]
+      summary: Detail barang
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: Detail barang
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/Barang'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Barang]
+      summary: Update barang
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BarangInput'
+      responses:
+        '200':
+          description: Barang diupdate
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Barang berhasil diupdate
+                  data:
+                    $ref: '#/components/schemas/Barang'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Barang]
+      summary: Hapus barang
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: Barang dihapus
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /barang/{id}/history:
+    get:
+      tags: [Barang]
+      summary: Kartu stok / riwayat mutasi satu barang (rekomendasi)
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+        - $ref: '#/components/parameters/StartDateQuery'
+        - $ref: '#/components/parameters/EndDateQuery'
+      responses:
+        '200':
+          description: Riwayat mutasi
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Mutasi'
+
+  /barang/{id}/photo:
+    post:
+      tags: [Barang]
+      summary: Upload foto barang (rekomendasi)
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [photo]
+              properties:
+                photo:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Foto terupload
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      photo_url:
+                        type: string
+                        example: http://localhost:8000/storage/barang/1.jpg
+
+  /barang/{id}/opname:
+    post:
+      tags: [Barang]
+      summary: Stok opname / penyesuaian stok (rekomendasi)
+      description: Koreksi stok fisik. `stok_fisik` dibandingkan dengan stok sistem, selisih tercatat di audit log.
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [stok_fisik, keterangan]
+              properties:
+                stok_fisik:
+                  type: integer
+                  minimum: 0
+                  example: 42
+                keterangan:
+                  type: string
+                  example: Hasil opname mingguan gudang A
+      responses:
+        '200':
+          description: Stok disesuaikan
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/Barang'
+
+  # ================= KATEGORI =================
+  /kategori:
+    get:
+      tags: [Kategori]
+      summary: List kategori (dengan pencarian)
+      parameters:
+        - $ref: '#/components/parameters/SearchQuery'
+      responses:
+        '200':
+          description: Daftar kategori + jumlah barang per kategori
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Kategori'
+              example:
+                value:
+                  success: true
+                  data:
+                    - id: 1
+                      nama: Elektronik
+                      deskripsi: Barang elektronik kantor
+                      jumlah_barang: 24
+                    - id: 2
+                      nama: ATK
+                      deskripsi: Alat tulis kantor
+                      jumlah_barang: 40
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Kategori]
+      summary: Tambah kategori
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KategoriInput'
+            example:
+              nama: Aksesoris
+              deskripsi: Kabel, adaptor, dan periferal
+      responses:
+        '201':
+          description: Kategori dibuat
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Kategori berhasil ditambahkan
+                  data:
+                    $ref: '#/components/schemas/Kategori'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          description: Nama kosong / kategori sudah ada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                value:
+                  success: false
+                  message: Kategori sudah ada
+
+  /kategori/{id}:
+    get:
+      tags: [Kategori]
+      summary: Detail kategori
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: Detail kategori
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/Kategori'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Kategori]
+      summary: Update kategori
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KategoriInput'
+            example:
+              nama: Elektronik Kantor
+              deskripsi: Barang elektronik untuk operasional kantor
+      responses:
+        '200':
+          description: Kategori diupdate
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Kategori berhasil diupdate
+                  data:
+                    $ref: '#/components/schemas/Kategori'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    delete:
+      tags: [Kategori]
+      summary: Hapus kategori
+      description: |
+        Barang yang memakai kategori ini TIDAK ikut terhapus —
+        `kategori_id`-nya menjadi `NULL` (ON DELETE SET NULL).
+        Gagal `409` bila masih dipakai dan screen konfirmasi diperlukan —
+        implementasi saat ini tetap mengizinkan hapus (SET NULL).
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: Kategori dihapus
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+              example:
+                value:
+                  success: true
+                  message: Kategori berhasil dihapus
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ================= SUPPLIER =================
+  /supplier:
+    get:
+      tags: [Supplier]
+      summary: List supplier (dengan pencarian)
+      parameters:
+        - $ref: '#/components/parameters/SearchQuery'
+      responses:
+        '200':
+          description: Daftar supplier + jumlah transaksi masuk per supplier
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Supplier'
+              example:
+                value:
+                  success: true
+                  data:
+                    - id: 1
+                      nama: PT Maju Jaya
+                      kontak: '081234567890'
+                      alamat: Jl. Merdeka No. 10
+                      jumlah_transaksi: 12
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Supplier]
+      summary: Tambah supplier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SupplierInput'
+            example:
+              nama: PT Maju Jaya
+              kontak: '081234567890'
+              alamat: Jl. Merdeka No. 10
+      responses:
+        '201':
+          description: Supplier dibuat
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Supplier berhasil ditambahkan
+                  data:
+                    $ref: '#/components/schemas/Supplier'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /supplier/{id}:
+    get:
+      tags: [Supplier]
+      summary: Detail supplier
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: Detail supplier
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/Supplier'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Supplier]
+      summary: Update supplier
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SupplierInput'
+            example:
+              nama: PT Maju Jaya Abadi
+              kontak: '081234567890'
+              alamat: Jl. Merdeka No. 10
+      responses:
+        '200':
+          description: Supplier diupdate
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Supplier berhasil diupdate
+                  data:
+                    $ref: '#/components/schemas/Supplier'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    delete:
+      tags: [Supplier]
+      summary: Hapus supplier
+      description: |
+        Transaksi barang masuk yang memakai supplier ini TIDAK ikut terhapus —
+        `supplier_id`-nya menjadi `NULL` (ON DELETE SET NULL).
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: Supplier dihapus
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+              example:
+                value:
+                  success: true
+                  message: Supplier berhasil dihapus
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ================= BARANG MASUK =================
+  /barang-masuk:
+    get:
+      tags: [Barang Masuk]
+      summary: List transaksi barang masuk
+      parameters:
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/PerPageQuery'
+        - $ref: '#/components/parameters/StartDateQuery'
+        - $ref: '#/components/parameters/EndDateQuery'
+        - $ref: '#/components/parameters/SearchQuery'
+      responses:
+        '200':
+          description: Daftar barang masuk
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TransaksiMasuk'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+    post:
+      tags: [Barang Masuk]
+      summary: Input barang masuk (Admin Panel #2)
+      description: Menambah stok otomatis. Bisa 1 barang per request atau banyak via `items[]`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BarangMasukInput'
+            examples:
+              satuBarang:
+                summary: Satu barang
+                value:
+                  barang_id: 1
+                  jumlah: 20
+                  harga_beli: 15000
+                  tanggal_masuk: '2026-09-25'
+                  supplier_id: 1
+                  keterangan: Restok dari PT Maju Jaya
+              banyakBarang:
+                summary: Banyak barang sekaligus
+                value:
+                  tanggal_masuk: '2026-09-25'
+                  supplier_id: 1
+                  keterangan: Restok mingguan
+                  items:
+                    - barang_id: 1
+                      jumlah: 20
+                      harga_beli: 15000
+                    - barang_id: 2
+                      jumlah: 10
+                      harga_beli: 5000
+      responses:
+        '201':
+          description: Barang masuk dicatat
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Barang masuk berhasil dicatat, stok bertambah
+                  data:
+                    $ref: '#/components/schemas/TransaksiMasuk'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /barang-masuk/{id}:
+    get:
+      tags: [Barang Masuk]
+      summary: Detail transaksi masuk
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: Detail transaksi
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/TransaksiMasuk'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Barang Masuk]
+      summary: Batalkan / hapus transaksi masuk (kembalikan stok)
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: Transaksi dibatalkan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+
+  # ================= BARANG KELUAR =================
+  /barang-keluar:
+    get:
+      tags: [Barang Keluar]
+      summary: List transaksi barang keluar
+      parameters:
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/PerPageQuery'
+        - $ref: '#/components/parameters/StartDateQuery'
+        - $ref: '#/components/parameters/EndDateQuery'
+        - $ref: '#/components/parameters/SearchQuery'
+      responses:
+        '200':
+          description: Daftar barang keluar
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TransaksiKeluar'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+    post:
+      tags: [Barang Keluar]
+      summary: Input barang keluar (Admin Panel #3)
+      description: Mengurangi stok otomatis. Gagal (422) jika stok tidak cukup.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BarangKeluarInput'
+            example:
+              barang_id: 1
+              jumlah: 5
+              tanggal_keluar: '2026-09-25'
+              penerima: Divisi IT
+              keterangan: Untuk kebutuhan operasional
+      responses:
+        '201':
+          description: Barang keluar dicatat
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Barang keluar berhasil dicatat, stok berkurang
+                  data:
+                    $ref: '#/components/schemas/TransaksiKeluar'
+        '422':
+          description: Stok tidak cukup / validasi gagal
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                value:
+                  success: false
+                  message: Stok tidak mencukupi (sisa 3, diminta 5)
+
+  /barang-keluar/{id}:
+    get:
+      tags: [Barang Keluar]
+      summary: Detail transaksi keluar
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: Detail transaksi
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/TransaksiKeluar'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Barang Keluar]
+      summary: Batalkan transaksi keluar (kembalikan stok)
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: Transaksi dibatalkan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+
+  # ================= LAPORAN =================
+  /laporan/stok:
+    get:
+      tags: [Laporan]
+      summary: Laporan stok saat ini (Admin Panel #4)
+      parameters:
+        - name: kategori_id
+          in: query
+          schema:
+            type: integer
+        - name: stok_kritis
+          in: query
+          schema:
+            type: integer
+            enum: [0, 1]
+      responses:
+        '200':
+          description: Laporan stok
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Barang'
+
+  /laporan/masuk:
+    get:
+      tags: [Laporan]
+      summary: Laporan barang masuk per periode
+      parameters:
+        - $ref: '#/components/parameters/StartDateQuery'
+        - $ref: '#/components/parameters/EndDateQuery'
+        - name: barang_id
+          in: query
+          schema:
+            type: integer
+        - name: supplier_id
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Laporan masuk + rekap total
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TransaksiMasuk'
+                  summary:
+                    type: object
+                    properties:
+                      total_transaksi:
+                        type: integer
+                        example: 34
+                      total_qty:
+                        type: integer
+                        example: 520
+                      total_nilai:
+                        type: number
+                        example: 7800000
+
+  /laporan/keluar:
+    get:
+      tags: [Laporan]
+      summary: Laporan barang keluar per periode
+      parameters:
+        - $ref: '#/components/parameters/StartDateQuery'
+        - $ref: '#/components/parameters/EndDateQuery'
+        - name: barang_id
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Laporan keluar + rekap total
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TransaksiKeluar'
+                  summary:
+                    type: object
+                    properties:
+                      total_transaksi:
+                        type: integer
+                        example: 21
+                      total_qty:
+                        type: integer
+                        example: 187
+
+  /laporan/mutasi:
+    get:
+      tags: [Laporan]
+      summary: Laporan mutasi / kartu stok gabungan (rekomendasi)
+      parameters:
+        - $ref: '#/components/parameters/StartDateQuery'
+        - $ref: '#/components/parameters/EndDateQuery'
+        - name: barang_id
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Mutasi stok
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Mutasi'
+
+  # ================= EXPORT =================
+  /export/barang:
+    get:
+      tags: [Export]
+      summary: Export data barang — PDF / Excel / CSV (Admin Panel #5)
+      parameters:
+        - $ref: '#/components/parameters/ExportFormatQuery'
+      responses:
+        '200':
+          description: File download
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+            text/csv:
+              schema:
+                type: string
+
+  /export/masuk:
+    get:
+      tags: [Export]
+      summary: Export laporan barang masuk — PDF / Excel / CSV
+      parameters:
+        - $ref: '#/components/parameters/ExportFormatQuery'
+        - $ref: '#/components/parameters/StartDateQuery'
+        - $ref: '#/components/parameters/EndDateQuery'
+      responses:
+        '200':
+          description: File download
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+            text/csv:
+              schema:
+                type: string
+
+  /export/keluar:
+    get:
+      tags: [Export]
+      summary: Export laporan barang keluar — PDF / Excel / CSV
+      parameters:
+        - $ref: '#/components/parameters/ExportFormatQuery'
+        - $ref: '#/components/parameters/StartDateQuery'
+        - $ref: '#/components/parameters/EndDateQuery'
+      responses:
+        '200':
+          description: File download
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+            text/csv:
+              schema:
+                type: string
+
+  /export/laporan:
+    get:
+      tags: [Export]
+      summary: Export rekap laporan (stok + masuk + keluar) — PDF / Excel / CSV
+      parameters:
+        - $ref: '#/components/parameters/ExportFormatQuery'
+        - $ref: '#/components/parameters/StartDateQuery'
+        - $ref: '#/components/parameters/EndDateQuery'
+      responses:
+        '200':
+          description: File download
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+            text/csv:
+              schema:
+                type: string
+
+  # ================= PROFILE =================
+  /profile:
+    get:
+      tags: [Profile]
+      summary: Lihat profil sendiri (Admin Panel #6)
+      responses:
+        '200':
+          description: Data profil
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/User'
+    put:
+      tags: [Profile]
+      summary: Update profile (Admin Panel #7)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  example: Budi Updated
+                email:
+                  type: string
+                  format: email
+      responses:
+        '200':
+          description: Profil diupdate
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Profil berhasil diperbarui
+                  data:
+                    $ref: '#/components/schemas/User'
+
+  /profile/password:
+    put:
+      tags: [Profile]
+      summary: Ganti password sendiri
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password, password, password_confirmation]
+              properties:
+                current_password:
+                  type: string
+                password:
+                  type: string
+                  minLength: 8
+                password_confirmation:
+                  type: string
+      responses:
+        '200':
+          description: Password diganti
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+
+  /profile/avatar:
+    post:
+      tags: [Profile]
+      summary: Upload foto profil (rekomendasi)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [avatar]
+              properties:
+                avatar:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Avatar terupload
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      avatar_url:
+                        type: string
+
+  # ================= USERS (rekomendasi) =================
+  /users:
+    get:
+      tags: [Users]
+      summary: List pengguna (admin only)
+      parameters:
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/PerPageQuery'
+        - $ref: '#/components/parameters/SearchQuery'
+      responses:
+        '200':
+          description: Daftar user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/User'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Users]
+      summary: Tambah pengguna (admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/RegisterRequest'
+                - type: object
+                  properties:
+                    role:
+                      type: string
+                      enum: [admin, staff]
+      responses:
+        '201':
+          description: User dibuat
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/User'
+
+  /users/{id}:
+    put:
+      tags: [Users]
+      summary: Update user / role (admin only)
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                email:
+                  type: string
+                role:
+                  type: string
+                  enum: [admin, staff]
+                is_active:
+                  type: boolean
+      responses:
+        '200':
+          description: User diupdate
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/User'
+    delete:
+      tags: [Users]
+      summary: Nonaktifkan / hapus user (admin only)
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: User dihapus
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+
+  # ================= AUDIT LOG & NOTIFIKASI (rekomendasi) =================
+  /audit-logs:
+    get:
+      tags: [Audit Log]
+      summary: List jejak aktivitas (admin only)
+      parameters:
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/PerPageQuery'
+        - $ref: '#/components/parameters/StartDateQuery'
+        - $ref: '#/components/parameters/EndDateQuery'
+      responses:
+        '200':
+          description: Daftar audit log
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AuditLog'
+
+  /notifikasi:
+    get:
+      tags: [Notifikasi]
+      summary: List notifikasi (stok menipis, dll)
+      responses:
+        '200':
+          description: Daftar notifikasi
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Notifikasi'
+
+  /notifikasi/{id}/read:
+    put:
+      tags: [Notifikasi]
+      summary: Tandai notifikasi sudah dibaca
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Notifikasi ditandai dibaca
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessMessage'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Isi dengan `access_token` dari /auth/login
+
+  parameters:
+    IdPath:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+      example: 1
+    PageQuery:
+      name: page
+      in: query
+      schema:
+        type: integer
+        default: 1
+    PerPageQuery:
+      name: per_page
+      in: query
+      schema:
+        type: integer
+        default: 15
+    SearchQuery:
+      name: search
+      in: query
+      description: Cari nama / kode / SKU barang
+      schema:
+        type: string
+    StartDateQuery:
+      name: start_date
+      in: query
+      schema:
+        type: string
+        format: date
+      example: '2026-09-01'
+    EndDateQuery:
+      name: end_date
+      in: query
+      schema:
+        type: string
+        format: date
+      example: '2026-09-25'
+    PeriodeQuery:
+      name: periode
+      in: query
+      description: Periode ringkasan dashboard
+      schema:
+        type: string
+        enum: [harian, mingguan, bulanan, tahunan]
+        default: bulanan
+    ExportFormatQuery:
+      name: format
+      in: query
+      required: true
+      description: Pilih format file export
+      schema:
+        type: string
+        enum: [pdf, xlsx, csv]
+        default: pdf
+
+  responses:
+    Unauthorized:
+      description: Token tidak ada / tidak valid
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            value:
+              success: false
+              message: Unauthorized. Token tidak valid.
+    Forbidden:
+      description: Akses ditolak (butuh role admin)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Data tidak ditemukan
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ValidationError:
+      description: Validasi gagal
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            value:
+              success: false
+              message: Validasi gagal
+              errors:
+                email:
+                  - Email sudah terdaftar
+
+  schemas:
+    RegisterRequest:
+      type: object
+      required: [name, email, password, password_confirmation]
+      properties:
+        name:
+          type: string
+          example: Budi Staff
+        email:
+          type: string
+          format: email
+          example: budi@example.com
+        password:
+          type: string
+          minLength: 8
+          example: rahasia123
+        password_confirmation:
+          type: string
+          example: rahasia123
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          example: admin@example.com
+        password:
+          type: string
+          example: admin123
+
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: Admin Utama
+        email:
+          type: string
+          example: admin@example.com
+        role:
+          type: string
+          enum: [admin, staff]
+          example: admin
+        avatar_url:
+          type: string
+          nullable: true
+        is_active:
+          type: boolean
+          example: true
+        created_at:
+          type: string
+          format: date-time
+
+    AuthResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Login berhasil
+        data:
+          type: object
+          properties:
+            user:
+              $ref: '#/components/schemas/User'
+            access_token:
+              type: string
+              example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+            refresh_token:
+              type: string
+            token_type:
+              type: string
+              example: Bearer
+            expires_in:
+              type: integer
+              example: 3600
+
+    SuccessMessage:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Operasi berhasil
+
+    Error:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        message:
+          type: string
+          example: Terjadi kesalahan
+        errors:
+          type: object
+          nullable: true
+
+    PaginationMeta:
+      type: object
+      properties:
+        current_page:
+          type: integer
+          example: 1
+        per_page:
+          type: integer
+          example: 15
+        total:
+          type: integer
+          example: 120
+        last_page:
+          type: integer
+          example: 8
+
+    DashboardSummary:
+      type: object
+      properties:
+        total_barang:
+          type: integer
+          example: 120
+        total_kategori:
+          type: integer
+          example: 12
+        total_stok:
+          type: integer
+          example: 4580
+        nilai_persediaan:
+          type: number
+          example: 125750000
+        barang_masuk_periode:
+          type: integer
+          example: 520
+        barang_keluar_periode:
+          type: integer
+          example: 187
+        stok_kritis_count:
+          type: integer
+          example: 5
+        stok_kritis:
+          type: array
+          items:
+            $ref: '#/components/schemas/Barang'
+
+    Kategori:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        nama:
+          type: string
+          example: Elektronik
+        deskripsi:
+          type: string
+          nullable: true
+          example: Barang elektronik kantor
+        jumlah_barang:
+          type: integer
+          example: 24
+
+    KategoriInput:
+      type: object
+      required: [nama]
+      properties:
+        nama:
+          type: string
+          minLength: 2
+          example: Aksesoris
+        deskripsi:
+          type: string
+          nullable: true
+          example: Kabel, adaptor, dan periferal
+
+    Supplier:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        nama:
+          type: string
+          example: PT Maju Jaya
+        kontak:
+          type: string
+          example: '081234567890'
+        alamat:
+          type: string
+          nullable: true
+        jumlah_transaksi:
+          type: integer
+          example: 12
+
+    SupplierInput:
+      type: object
+      required: [nama]
+      properties:
+        nama:
+          type: string
+          minLength: 2
+          example: PT Maju Jaya
+        kontak:
+          type: string
+          nullable: true
+          example: '081234567890'
+        alamat:
+          type: string
+          nullable: true
+          example: Jl. Merdeka No. 10
+
+    Barang:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        kode:
+          type: string
+          example: BRG-0001
+        nama:
+          type: string
+          example: Kabel UTP Cat6 10m
+        kategori_id:
+          type: integer
+          nullable: true
+          example: 1
+        kategori:
+          $ref: '#/components/schemas/Kategori'
+        satuan:
+          type: string
+          example: pcs
+        harga:
+          type: number
+          example: 75000
+        stok:
+          type: integer
+          example: 48
+        stok_minimum:
+          type: integer
+          example: 10
+        is_low_stock:
+          type: boolean
+          example: false
+        photo_url:
+          type: string
+          nullable: true
+        deskripsi:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    BarangInput:
+      type: object
+      required: [nama, satuan]
+      properties:
+        kode:
+          type: string
+          description: Kosongkan untuk auto-generate (BRG-xxxx)
+          example: BRG-0001
+        nama:
+          type: string
+          example: Kabel UTP Cat6 10m
+        kategori_id:
+          type: integer
+          example: 1
+        satuan:
+          type: string
+          example: pcs
+        harga:
+          type: number
+          minimum: 0
+          example: 75000
+        stok_awal:
+          type: integer
+          minimum: 0
+          default: 0
+          example: 50
+        stok_minimum:
+          type: integer
+          minimum: 0
+          default: 5
+          example: 10
+        deskripsi:
+          type: string
+
+    BarangPaginated:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Barang'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    TransaksiMasuk:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 10
+        kode_transaksi:
+          type: string
+          example: BM-20260925-001
+        barang_id:
+          type: integer
+          example: 1
+        barang:
+          $ref: '#/components/schemas/Barang'
+        jumlah:
+          type: integer
+          example: 20
+        harga_beli:
+          type: number
+          example: 15000
+        total:
+          type: number
+          example: 300000
+        tanggal_masuk:
+          type: string
+          format: date
+          example: '2026-09-25'
+        supplier_id:
+          type: integer
+          nullable: true
+        supplier:
+          $ref: '#/components/schemas/Supplier'
+        keterangan:
+          type: string
+          nullable: true
+        created_by:
+          type: string
+          example: Admin Utama
+        created_at:
+          type: string
+          format: date-time
+
+    BarangMasukInput:
+      type: object
+      description: Isi salah satu pola — mode satu barang ATAU mode banyak (items[]).
+      properties:
+        barang_id:
+          type: integer
+          example: 1
+        jumlah:
+          type: integer
+          minimum: 1
+          example: 20
+        harga_beli:
+          type: number
+          example: 15000
+        tanggal_masuk:
+          type: string
+          format: date
+          example: '2026-09-25'
+        supplier_id:
+          type: integer
+          example: 1
+        keterangan:
+          type: string
+        items:
+          type: array
+          items:
+            type: object
+            required: [barang_id, jumlah]
+            properties:
+              barang_id:
+                type: integer
+              jumlah:
+                type: integer
+                minimum: 1
+              harga_beli:
+                type: number
+
+    TransaksiKeluar:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 7
+        kode_transaksi:
+          type: string
+          example: BK-20260925-001
+        barang_id:
+          type: integer
+          example: 1
+        barang:
+          $ref: '#/components/schemas/Barang'
+        jumlah:
+          type: integer
+          example: 5
+        tanggal_keluar:
+          type: string
+          format: date
+          example: '2026-09-25'
+        penerima:
+          type: string
+          example: Divisi IT
+        keterangan:
+          type: string
+          nullable: true
+        created_by:
+          type: string
+          example: Admin Utama
+        created_at:
+          type: string
+          format: date-time
+
+    BarangKeluarInput:
+      type: object
+      required: [barang_id, jumlah, tanggal_keluar]
+      properties:
+        barang_id:
+          type: integer
+          example: 1
+        jumlah:
+          type: integer
+          minimum: 1
+          example: 5
+        tanggal_keluar:
+          type: string
+          format: date
+          example: '2026-09-25'
+        penerima:
+          type: string
+          example: Divisi IT
+        keterangan:
+          type: string
+
+    Mutasi:
+      type: object
+      properties:
+        tanggal:
+          type: string
+          format: date-time
+          example: '2026-09-25T10:00:00Z'
+        tipe:
+          type: string
+          enum: [masuk, keluar, opname, awal]
+          example: masuk
+        kode_transaksi:
+          type: string
+          example: BM-20260925-001
+        barang_id:
+          type: integer
+          example: 1
+        qty_masuk:
+          type: integer
+          example: 20
+        qty_keluar:
+          type: integer
+          example: 0
+        stok_akhir:
+          type: integer
+          example: 68
+        keterangan:
+          type: string
+
+    AuditLog:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 99
+        user:
+          type: string
+          example: admin@example.com
+        aksi:
+          type: string
+          example: create_barang_masuk
+        tabel:
+          type: string
+          example: barang_masuk
+        record_id:
+          type: integer
+          example: 10
+        detail:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    Notifikasi:
+      type: object
+      properties:
+        id:
+          type: string
+          example: ntf_123
+        judul:
+          type: string
+          example: Stok menipis
+        pesan:
+          type: string
+          example: Kabel UTP Cat6 tersisa 3 (min 10)
+        tipe:
+          type: string
+          example: low_stock
+        is_read:
+          type: boolean
+          example: false
+        created_at:
+          type: string
+          format: date-time
