@@ -82,7 +82,7 @@ DB_PORT=5432
 DB_NAME=pencatat_barang
 DB_NAME_TEST=pencatat_barang_test
 DB_USER=postgres
-DB_PASS=ucup
+DB_PASS=[isi password anda]
 ```
 
 ## 🗂️ Struktur Proyek
