@@ -10,7 +10,7 @@
 <div class="card shadow-sm mb-3"><div class="card-body row g-2">
   <div class="col-md-3"><input id="qStart" class="form-control date" placeholder="Dari tanggal"></div>
   <div class="col-md-3"><input id="qEnd" class="form-control date" placeholder="Sampai tanggal"></div>
-  <div class="col-md-2"><button class="btn btn-outline-primary" onclick="load()">Filter</button></div>
+  <div class="col-md-2 d-flex gap-1"><button class="btn btn-outline-primary" onclick="load()">Filter</button><button class="btn btn-outline-secondary" onclick="load()" title="Muat ulang data"><i class="bi bi-arrow-clockwise"></i></button></div>
 </div></div>
 <div class="card shadow-sm"><div class="card-body">
   <table class="table table-striped" id="tbl" style="width:100%">
@@ -69,10 +69,10 @@ async function loadOption() {
 async function load() {
   try {
     const r = await api(`/api/v1/barang-masuk?start_date=${el('qStart').value}&end_date=${el('qEnd').value}`);
-    document.querySelector('#tbl tbody').innerHTML = r.data.map(x => `<tr>
+    const html = r.data.map(x => `<tr>
       <td>${esc(x.kode_transaksi)}</td><td>${esc(x.tanggal_masuk)}</td><td>${esc(x.barang_nama)}</td><td>${x.jumlah}</td><td>${esc(x.supplier_nama ?? '-')}</td>
-      <td><button class="btn btn-sm btn-danger" onclick="batal(${x.id})">Batalkan</button></td></tr>`).join('');
-    dt = safeDataTable('#tbl', dt);
+      <td><button class="btn btn-sm btn-danger" onclick="batal(${x.id})">Batalkan</button></td></tr>`).join('') || '<tr><td colspan="6" class="text-center text-muted">Belum ada transaksi barang masuk pada periode ini.</td></tr>';
+    dt = refreshTable('#tbl', dt, html, 'barang-masuk');
   } catch (e) { swalError(e); }
 }
 async function simpan() {

@@ -35,14 +35,14 @@ async function load() {
     const r = await api('/api/v1/supplier?search=' + encodeURIComponent(el('qSearch').value));
     supplierCache = {};
     (r.data || []).forEach(s => { supplierCache[s.id] = s; });
-    document.querySelector('#tbl tbody').innerHTML = (r.data || []).map(s => `<tr>
+    const html = (r.data || []).map(s => `<tr>
       <td>${s.id}</td><td class="fw-semibold">${esc(s.nama)}</td><td>${esc(s.kontak ?? '-')}</td><td>${esc(s.alamat ?? '-')}</td>
       <td><span class="badge bg-primary">${s.jumlah_transaksi ?? 0}</span></td>
       <td class="text-nowrap">
         <button class="btn btn-sm btn-warning" onclick="edit(${s.id})">Edit</button>
         <button class="btn btn-sm btn-danger" onclick="hapus(${s.id})">Hapus</button>
       </td></tr>`).join('') || '<tr><td colspan="6" class="text-center">Belum ada supplier</td></tr>';
-    dt = safeDataTable('#tbl', dt);
+    dt = refreshTable('#tbl', dt, html, 'supplier');
   } catch (e) { swalError(e); }
 }
 function edit(id) {

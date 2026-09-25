@@ -1,6 +1,7 @@
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h2><i class="bi bi-boxes"></i> Data Barang</h2>
   <div>
+    <button class="btn btn-outline-secondary btn-sm" onclick="load()" title="Muat ulang data"><i class="bi bi-arrow-clockwise"></i></button>
     <button class="btn btn-success btn-sm" onclick="window.open('/api/v1/export/barang?format=xlsx','_blank')">Excel</button>
     <button class="btn btn-danger btn-sm" onclick="window.open('/api/v1/export/barang?format=pdf','_blank')">PDF</button>
     <button class="btn btn-secondary btn-sm" onclick="window.open('/api/v1/export/barang?format=csv','_blank')">CSV</button>
@@ -75,7 +76,7 @@ async function load() {
     const r = await api('/api/v1/barang?per_page=100');
     barangCache = {};
     (r.data || []).forEach(b => { barangCache[b.id] = b; });
-    document.querySelector('#tblBarang tbody').innerHTML = (r.data || []).map(b => `<tr>
+    const html = (r.data || []).map(b => `<tr>
       <td>${esc(b.kode)}</td><td>${esc(b.nama)}</td><td>${esc(b.kategori?.nama ?? '-')}</td><td>${esc(b.satuan)}</td>
       <td>${Number(b.harga).toLocaleString('id-ID')}</td>
       <td>${b.is_low_stock ? `<span class="badge bg-danger">${b.stok}</span>` : b.stok}</td>
@@ -83,8 +84,8 @@ async function load() {
         <button class="btn btn-sm btn-warning" onclick="edit(${b.id})">Edit</button>
         <button class="btn btn-sm btn-info" onclick="opname(${b.id})">Opname</button>
         <button class="btn btn-sm btn-danger" onclick="hapus(${b.id})">Hapus</button>
-      </td></tr>`).join('');
-    dt = safeDataTable('#tblBarang', dt);
+      </td></tr>`).join('') || '<tr><td colspan="7" class="text-center text-muted">Belum ada data barang. Klik <b>+ Tambah</b> untuk input pertama.</td></tr>';
+    dt = refreshTable('#tblBarang', dt, html, 'barang');
   } catch (e) { swalError(e); }
 }
 

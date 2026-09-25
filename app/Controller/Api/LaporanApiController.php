@@ -185,51 +185,169 @@ class LaporanApiController
         }
 
         if ($format === 'pdf') {
-            // PDF sederhana: HTML printable (buka di browser → Print → Save as PDF).
-            // Untuk PDF biner native, pasang dompdf/mpdf lalu render $rows di sini.
-            header('Content-Type: text/html; charset=utf-8');
-            echo "<html><head><title>" . htmlspecialchars($title) . "</title>";
-            echo "<style>body{font-family:Arial}table{border-collapse:collapse;width:100%}th,td{border:1px solid #333;padding:6px;font-size:12px}</style></head><body>";
-            echo "<h2>" . htmlspecialchars($title) . "</h2><p>Periode: " . htmlspecialchars($start . ' s/d ' . $end) . " — Total: " . count($rows) . "</p>";
-            if ($rows) {
-                echo "<table><tr>";
-                foreach (array_keys($rows[0]) as $h) {
-                    echo "<th>" . htmlspecialchars((string) $h) . "</th>";
-                }
-                echo "</tr>";
-                foreach ($rows as $r) {
-                    echo "<tr>";
-                    foreach ($r as $c) {
-                        echo "<td>" . htmlspecialchars((string) ($c ?? '')) . "</td>";
-                    }
-                    echo "</tr>";
-                }
-                echo "</table>";
-            } else {
-                echo "<p>Tidak ada data.</p>";
-            }
-            echo "<script>window.print()</script></body></html>";
-            if ((getenv('APP_ENV') ?: ($_ENV['APP_ENV'] ?? 'prod')) != 'test') {
-                exit();
-            }
+            $this->exportPdf($jenis, $title, $rows, $start, $end);
             return;
         }
 
-        // CSV & XLSX (XLSX disajikan sebagai spreadsheet-compatible CSV agar tanpa dependency tambahan)
-        $mime = $format === 'xlsx'
-            ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-            : 'text/csv';
-        $ext = $format === 'xlsx' ? 'xlsx.csv' : 'csv';
-        header('Content-Type: ' . $mime);
-        header("Content-Disposition: attachment; filename=\"{$jenis}-" . date('Ymd') . ".{$ext}\"");
+        if ($format === 'xlsx') {
+            $this->exportXlsx($jenis, $title, $rows, $start, $end);
+            return;
+        }
+
+        // CSV murni memakai fputcsv + BOM UTF-8 agar rapi dibuka di Excel
+        if (php_sapi_name() !== 'cli') {
+            header('Content-Type: text/csv; charset=utf-8');
+            header('Content-Disposition: attachment; filename="' . $jenis . '-' . date('Ymd') . '.csv"');
+        }
         $out = fopen('php://output', 'w');
+        fwrite($out, "\xEF\xBB\xBF"); // BOM agar Excel baca UTF-8 dengan benar
         if ($rows) {
-            fputcsv($out, array_keys($rows[0]));
+            fputcsv($out, array_keys($rows[0]), ',', '"', '');
             foreach ($rows as $r) {
-                fputcsv($out, array_values(array_map(fn($v) => (string) ($v ?? ''), $r)));
+                fputcsv($out, array_values(array_map(fn($v) => (string) ($v ?? ''), $r)), ',', '"', '');
             }
+        } else {
+            fputcsv($out, ['Tidak ada data pada periode ini'], ',', '"', '');
         }
         fclose($out);
+        if ((getenv('APP_ENV') ?: ($_ENV['APP_ENV'] ?? 'prod')) != 'test') {
+            exit();
+        }
+    }
+
+    /** Render laporan sebagai file .xlsx asli via PhpSpreadsheet (judul, header gaya, border, freeze). */
+    private function exportXlsx(string $jenis, string $title, array $rows, string $start, string $end): void
+    {
+        $periode = ($start !== '' || $end !== '') ? trim($start . ' s/d ' . $end, ' s/d ') : 'Semua periode';
+
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle(substr($title, 0, 31));
+        $set = fn(int $col, int $row, mixed $val) => $sheet->setCellValue(
+            \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($col) . $row, $val
+        );
+
+        $set(1, 1, 'Aplikasi Pencatat Barang — ' . $title);
+        $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(14);
+        $set(1, 2, 'Periode: ' . $periode . '  |  Total baris: ' . count($rows) . '  |  Dicetak: ' . date('d M Y H:i'));
+
+        $headerRow = 4;
+        $colCount = 1;
+        if ($rows) {
+            $headers = array_keys($rows[0]);
+            $set(1, $headerRow, 'No');
+            foreach ($headers as $i => $h) {
+                $set($i + 2, $headerRow, ucwords(str_replace('_', ' ', (string) $h)));
+            }
+            $colCount = count($headers) + 1;
+            $rowNum = $headerRow + 1;
+            $no = 1;
+            foreach ($rows as $r) {
+                $set(1, $rowNum, $no++);
+                $col = 2;
+                foreach ($r as $c) {
+                    $set($col++, $rowNum, $c === null ? '-' : $c);
+                }
+                $rowNum++;
+            }
+            $lastRow = $rowNum - 1;
+        } else {
+            $set(1, $headerRow, 'Keterangan');
+            $set(1, $headerRow + 1, 'Tidak ada data pada periode ini');
+            $lastRow = $headerRow + 1;
+        }
+
+        $lastCol = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colCount);
+        $sheet->getStyle("A{$headerRow}:{$lastCol}{$headerRow}")->applyFromArray([
+            'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
+            'fill' => ['fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID, 'startColor' => ['rgb' => '0F172A']],
+        ]);
+        $sheet->getStyle("A{$headerRow}:{$lastCol}{$lastRow}")->applyFromArray([
+            'borders' => ['allBorders' => ['borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN, 'color' => ['rgb' => '999999']]],
+        ]);
+        for ($c = 1; $c <= $colCount; $c++) {
+            $sheet->getColumnDimension(\PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($c))->setAutoSize(true);
+        }
+        $sheet->freezePane('A' . ($headerRow + 1));
+
+        if (php_sapi_name() !== 'cli') {
+            header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+            header('Content-Disposition: attachment; filename="' . $jenis . '-' . date('Ymd') . '.xlsx"');
+        }
+        $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+        $writer->save('php://output');
+        $spreadsheet->disconnectWorksheets();
+        if ((getenv('APP_ENV') ?: ($_ENV['APP_ENV'] ?? 'prod')) != 'test') {
+            exit();
+        }
+    }
+
+    /** Render laporan sebagai PDF biner via dompdf (A4 landscape, kop + tabel rapi + nomor halaman). */
+    private function exportPdf(string $jenis, string $title, array $rows, string $start, string $end): void
+    {
+        $periode = ($start !== '' || $end !== '') ? trim($start . ' s/d ' . $end, ' s/d ') : 'Semua periode';
+        $esc = fn($v) => htmlspecialchars((string) ($v ?? ''), ENT_QUOTES, 'UTF-8');
+
+        $html = '<html><head><meta charset="utf-8"><style>'
+            . 'body{font-family:Helvetica,Arial,sans-serif;font-size:10px;color:#111;}'
+            . '.kop{text-align:center;border-bottom:3px double #0f172a;padding-bottom:8px;margin-bottom:10px;}'
+            . '.kop h1{font-size:18px;margin:0;}'
+            . '.kop p{font-size:10px;color:#555;margin:2px 0 0;}'
+            . 'h2{font-size:15px;margin:0 0 2px;}'
+            . '.meta{font-size:10px;color:#333;margin-bottom:10px;}'
+            . 'table{border-collapse:collapse;width:100%;}'
+            . 'th{background:#0f172a;color:#fff;padding:6px 5px;text-align:left;font-size:9px;}'
+            . 'td{border:1px solid #999;padding:5px;font-size:9px;vertical-align:top;}'
+            . 'tr:nth-child(even) td{background:#f1f5f9;}'
+            . '.num{text-align:right;}'
+            . '.footer{margin-top:10px;font-size:9px;color:#555;}'
+            . '</style></head><body>'
+            . '<div class="kop"><h1>Aplikasi Pencatat Barang</h1><p>Inventory Management — Laporan Operasional</p></div>'
+            . '<h2>' . $esc($title) . '</h2>'
+            . '<div class="meta">Periode: ' . $esc($periode) . ' &nbsp;|&nbsp; Total baris: ' . count($rows)
+            . ' &nbsp;|&nbsp; Dicetak: ' . date('d M Y H:i') . '</div>';
+
+        if ($rows) {
+            $headers = array_keys($rows[0]);
+            $html .= '<table><thead><tr><th style="width:30px;">No</th>';
+            foreach ($headers as $h) {
+                $label = ucwords(str_replace('_', ' ', (string) $h));
+                $html .= '<th>' . $esc($label) . '</th>';
+            }
+            $html .= '</tr></thead><tbody>';
+            $no = 1;
+            foreach ($rows as $r) {
+                $html .= '<tr><td class="num">' . $no++ . '</td>';
+                foreach ($r as $c) {
+                    $cell = $c === null ? '-' : (string) $c;
+                    $cls = is_numeric($c) ? ' class="num"' : '';
+                    $html .= '<td' . $cls . '>' . $esc($cell) . '</td>';
+                }
+                $html .= '</tr>';
+            }
+            $html .= '</tbody></table>';
+        } else {
+            $html .= '<p><i>Tidak ada data pada periode ini.</i></p>';
+        }
+        $html .= '<div class="footer">Dokumen dihasilkan otomatis oleh sistem. ' . $esc($title) . '.</div></body></html>';
+
+        $options = new \Dompdf\Options();
+        $options->set('defaultFont', 'Helvetica');
+        $options->set('isRemoteEnabled', false);
+        $dompdf = new \Dompdf\Dompdf($options);
+        $dompdf->loadHtml($html, 'UTF-8');
+        $dompdf->setPaper('A4', 'landscape');
+        $dompdf->render();
+        $canvas = $dompdf->getCanvas();
+        $canvas->page_text(770, 550, 'Hal {PAGE_NUM} / {PAGE_COUNT}', null, 8, [0, 0, 0]);
+
+        $pdf = $dompdf->output();
+        if (php_sapi_name() !== 'cli') {
+            header('Content-Type: application/pdf');
+            header('Content-Disposition: attachment; filename="' . $jenis . '-' . date('Ymd') . '.pdf"');
+            header('Content-Length: ' . strlen($pdf));
+        }
+        echo $pdf;
         if ((getenv('APP_ENV') ?: ($_ENV['APP_ENV'] ?? 'prod')) != 'test') {
             exit();
         }

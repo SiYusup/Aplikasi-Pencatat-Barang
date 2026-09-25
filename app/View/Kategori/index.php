@@ -34,14 +34,14 @@ async function load() {
     const r = await api('/api/v1/kategori?search=' + encodeURIComponent(el('qSearch').value));
     kategoriCache = {};
     (r.data || []).forEach(k => { kategoriCache[k.id] = k; });
-    document.querySelector('#tbl tbody').innerHTML = (r.data || []).map(k => `<tr>
+    const html = (r.data || []).map(k => `<tr>
       <td>${k.id}</td><td class="fw-semibold">${esc(k.nama)}</td><td>${esc(k.deskripsi ?? '-')}</td>
       <td><span class="badge bg-primary">${k.jumlah_barang ?? 0}</span></td>
       <td class="text-nowrap">
         <button class="btn btn-sm btn-warning" onclick="edit(${k.id})">Edit</button>
         <button class="btn btn-sm btn-danger" onclick="hapus(${k.id})">Hapus</button>
       </td></tr>`).join('') || '<tr><td colspan="5" class="text-center">Belum ada kategori</td></tr>';
-    dt = safeDataTable('#tbl', dt);
+    dt = refreshTable('#tbl', dt, html, 'kategori');
   } catch (e) { swalError(e); }
 }
 function edit(id) {
