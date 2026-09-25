@@ -50,6 +50,7 @@ $isActive = function (string $prefix, bool $exact = false) use ($uri): string {
     <a class="nav-link <?= $isActive('/') ?>" href="/"><i class="bi bi-speedometer2 me-2"></i>Dashboard</a>
     <a class="nav-link <?= $isActive('/barang', true) ?>" href="/barang"><i class="bi bi-boxes me-2"></i>Data Barang</a>
     <a class="nav-link <?= $isActive('/kategori') ?>" href="/kategori"><i class="bi bi-tags me-2"></i>Kategori</a>
+    <a class="nav-link <?= $isActive('/supplier') ?>" href="/supplier"><i class="bi bi-truck me-2"></i>Supplier</a>
     <a class="nav-link <?= $isActive('/barang/masuk') ?>" href="/barang/masuk"><i class="bi bi-box-arrow-in-down me-2"></i>Barang Masuk</a>
     <a class="nav-link <?= $isActive('/barang/keluar') ?>" href="/barang/keluar"><i class="bi bi-box-arrow-up me-2"></i>Barang Keluar</a>
     <a class="nav-link <?= $isActive('/laporan') ?>" href="/laporan"><i class="bi bi-file-earmark-text me-2"></i>Laporan</a>
